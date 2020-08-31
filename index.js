@@ -1,11 +1,12 @@
+require('dotenv').config()
 const express = require('express')
 const app = express()
 const morgan = require('morgan')
 const cors = require('cors')
+const Person = require('./models/person')
 
 app.use(express.json())
 app.use(cors())
-
 app.use(express.static('build'))
 
 morgan.token('postData', function (req, res) {
@@ -52,40 +53,45 @@ const numberExists = (persons, number) => {
 }
 
 app.get('/info', (req, res) => {
-    res.send(`Phone has info for ${persons.length} people <br> 
-    ${new Date()}`)
+    Person.countDocuments({},(err, total)=>{
+        if(err){
+            next(err)
+        }else{
+            res.send(`Phone has info for ${total} people <br> 
+            ${new Date()}`)
+        }
+   })
 })
 
 app.get('/api/persons', (req, res) => {
-    res.send(persons)
+    Person.find({}).then(persons =>{
+        res.json(persons)
+    })
 })
 
-app.get('/api/persons/:id', (req, res) => {
-    const id = Number(req.params.id)
-
-    const person = persons.find(person => {
-        return person.id === id
-    })
-
-    if (person) {
-        res.send(person)
-    } else {
-        res.status(404).end();
-    }
+app.get('/api/persons/:id', (req, res, next) => {
+    const person = Person.findById(req.params.id).
+        then(person => {
+            if (person) {
+                res.json(person)
+            } else {
+                res.status(404).end();
+            }
+        })
+        .catch(error => next(error) )
+            //console.log('Error on method get a person: \n',error)
+            //res.status(400).send({ error: 'malformatted id' })
+            //res.status(500).end()
+        //})
+    
 })
 
-app.delete('/api/persons/:id', (req, res) => {
-    const id = Number(req.params.id)
-    const counter = persons.length
-
-    persons = persons.filter(person => {
-        return person.id !== id
-    })
-    if (counter === persons.length || !counter) {
-        res.status(404).end()
-    } else {
+app.delete('/api/persons/:id', (req, res, next)=>{
+    Person.findByIdAndRemove(req.params.id)
+    .then(result =>{
         res.status(204).end()
-    }
+    })
+    .catch(error =>next(error))
 })
 
 //The name or number is missing
@@ -102,15 +108,43 @@ app.post('/api/persons', (req, res) => {
             error: 'number already exists'
         });
     } else {
-        const person = {
-            id: generateId(),
+        const person = new Person({
             name: body.name,
             number: body.number
-        }
-        persons = persons.concat(person)
-        res.status(201).send(person)
+        })
+        person.save().then(personSaved =>{
+         res.json(personSaved)
+        })
     }
 })
+
+app.put('/api/persons/:id', (req,res,next)=>{
+    const body = req.body
+
+    const person = {
+        number: body.number
+    }
+    Person.findByIdAndUpdate(req.params.id,person,{new:true})
+    .then(updatedPerson =>{
+        res.json(updatedPerson)
+    })
+    .catch(error =>next(error))
+})
+
+const errorHandler = (error, request, response, next) => {
+    
+    console.error("Error Handler")
+    console.error(error.message)
+  
+    if (error.name === 'CastError') {
+      return response.status(400).send({ error: 'malformatted id' })
+    }   
+    next(error)
+  }
+  
+  app.use(errorHandler)
+
+
 
 const PORT = process.env.PORT || 3001
 
